@@ -40,12 +40,14 @@ uint baseHash(uvec2 p)
     return h32 ^ (h32 >> 16);
 }
 
-float hash1(inout float seed) {
+float hash1(inout float seed) 
+{
     uint n = baseHash(floatBitsToUint(vec2(seed += 0.1,seed += 0.1)));
     return float(n) / float(0xffffffffU);
 }
 
-vec2 hash2(inout float seed) {
+vec2 hash2(inout float seed) 
+{
     uint n = baseHash(floatBitsToUint(vec2(seed += 0.1,seed += 0.1)));
     uvec2 rz = uvec2(n, n * 48271U);
     return vec2(rz.xy & uvec2(0x7fffffffU)) / float(0x7fffffff);
@@ -132,38 +134,27 @@ Camera createCamera(
     return cam;
 }
 
-Ray getRay(Camera cam, vec2 pixel_sample)  //rnd pixel_sample viewport coordinates
-{   
-    //lens sample for DOF
-    vec2 ls = cam.lensRadius * randomInUnitDisk(gSeed); 
+Ray getRay(Camera cam, vec2 pixel_sample) 
+{
+    // Lens sample 
+    vec2 ls = cam.lensRadius * randomInUnitDisk(gSeed);
     float time = cam.time0 + hash1(gSeed) * (cam.time1 - cam.time0);
     
-    //Calculate eye_offset 
+    // Eye offset 
     vec3 eye_offset = cam.eye + cam.u * ls.x + cam.v * ls.y;
-
-    //Calculate ray direction
-    //pixel_sample is in viewport coordinates, so we need to convert it to world coordinates
-
-    // Compute corner of the viewport in world space
-    // The viewport is centered at cam.eye, and extends in the direction of cam.n
+    
+    // OPTIMISATION: Calc directly on vp
+    // pixel_sample is in [0,1]x[0,1], we center directly
+    vec2 centered_pixel = pixel_sample - 0.5; // [-0.5, 0.5]
+    
+    // Point on the vp in world space coords
     vec3 viewport_center = cam.eye - cam.n * cam.planeDist;
-    // The viewport's width and height are defined by cam.width and cam.height
-    // The viewport's center is at cam.eye - cam.n * cam.planeDist
-    // The viewport's u and v vectors are orthogonal to cam.n and define the axes of the viewport
-    // The pixel_sample is in the range [0, 1] for both x and y, where (0, 0) is the bottom-left corner
-    // and (1, 1) is the top-right corner of the viewport.
-    vec3 viewport_u = cam.u * cam.width;
-    vec3 viewport_v = cam.v * cam.height;
-
-    vec3 vpupperleft = viewport_center - (cam.planeDist * cam.n) - (0.5 * viewport_u) - (0.5 * viewport_v);
-    // The viewport's upper left corner is at vpupperleft
-
-
-    // Convert pixel_sample (in [0,1]x[0,1]) to viewport position in world space
-    vec3 ps_wc = viewport_center + (pixel_sample.x - 0.5) * viewport_u + (pixel_sample.y - 0.5) * viewport_v;
-
-    vec3 ray_direction = normalize(ps_wc - eye_offset);
-
+    vec3 viewport_point = viewport_center + 
+                         centered_pixel.x * cam.width * cam.u + 
+                         centered_pixel.y * cam.height * cam.v;
+    
+    vec3 ray_direction = normalize(viewport_point - eye_offset);
+    
     return createRay(eye_offset, ray_direction, time);
 }
 
