@@ -6,7 +6,7 @@
 
  #include "./common.glsl"
  #iChannel0 "self"
- 
+
  #define SCENE 0
 
 bool hit_world(Ray r, float tmin, float tmax, inout HitRecord rec)
@@ -196,15 +196,64 @@ bool hit_world(Ray r, float tmin, float tmax, inout HitRecord rec)
     return hit;
 }
 
-vec3 directlighting(pointLight pl, Ray r, HitRecord rec){
-    vec3 diffCol, specCol;
-    vec3 colorOut = vec3(0.0, 0.0, 0.0);
-    float shininess;
-    HitRecord dummy;
-
-   //INSERT YOUR CODE HERE
+vec3 directlighting(pointLight pl, Ray r, HitRecord rec) {
+    vec3 colorOut = vec3(0.0);
     
-	return colorOut; 
+    // Vector from hit point to light
+    vec3 lightDir = normalize(pl.pos - rec.pos);
+    
+    // Distance to light (for attenuation)
+    float lightDistance = length(pl.pos - rec.pos);
+    
+    // Check if light is on the same side as the surface normal
+    float NdotL = dot(rec.normal, lightDir);
+    if (NdotL <= 0.0) {
+        return vec3(0.0); // Light is behind the surface
+    }
+    
+    // Shadow ray - check if there's an object between hit point and light
+    Ray shadowRay;
+    shadowRay.o = rec.pos + rec.normal * 0.001; // Offset to avoid self-intersection
+    shadowRay.d = lightDir;
+    
+    HitRecord shadowRec;
+    // If shadow ray hits something before reaching the light, we're in shadow
+    if (hit_world(shadowRay, 0.001, lightDistance - 0.001, shadowRec)) {
+        return vec3(0.0); // In shadow
+    }
+    
+    // Light attenuation (inverse square law)
+    float attenuation = 1.0 / (1.0 + 0.1 * lightDistance + 0.01 * lightDistance * lightDistance);
+    
+    // Calculate lighting based on material type
+    if (rec.material.type == MT_DIFFUSE) {
+        // Lambertian diffuse
+        vec3 diffuse = rec.material.albedo * pl.color * NdotL * attenuation;
+        colorOut += diffuse;
+    }
+    else if (rec.material.type == MT_METAL) {
+        // Blinn-Phong for metals
+        vec3 viewDir = normalize(-r.d);
+        vec3 halfDir = normalize(lightDir + viewDir);
+        float NdotH = max(dot(rec.normal, halfDir), 0.0);
+        
+        // Diffuse component
+        vec3 diffuse = rec.material.albedo * pl.color * NdotL;
+        
+        // Specular component
+        float shininess = mix(32.0, 128.0, 1.0 - rec.material.roughness);
+        vec3 specular = rec.material.albedo * pl.color * pow(NdotH, shininess);
+        
+        colorOut += (diffuse + specular) * attenuation;
+    }
+    else if (rec.material.type == MT_DIELECTRIC) {
+        // For glass/dielectric materials, mainly handle transmission
+        // Simple approach: some diffuse reflection
+        vec3 diffuse = rec.material.albedo * pl.color * NdotL * 0.1; // Reduced contribution
+        colorOut += diffuse * attenuation;
+    }
+    
+    return colorOut;
 }
 
 #define MAX_BOUNCES 10
@@ -213,35 +262,64 @@ vec3 rayColor(Ray r)
 {
     HitRecord rec;
     vec3 col = vec3(0.0);
-    vec3 throughput = vec3(1.0f, 1.0f, 1.0f);
+    vec3 throughput = vec3(1.0);
+    
     for(int i = 0; i < MAX_BOUNCES; ++i)
     {
         if(hit_world(r, 0.001, 10000.0, rec))
         {
-            //calculate direct lighting with 3 white point lights:
-            {
-                //createPointLight(vec3(-10.0, 15.0, 0.0), vec3(1.0, 1.0, 1.0))
-                //createPointLight(vec3(8.0, 15.0, 3.0), vec3(1.0, 1.0, 1.0))
-                //createPointLight(vec3(1.0, 15.0, -9.0), vec3(1.0, 1.0, 1.0))
-
-                //for instance: col += directlighting(createPointLight(vec3(-10.0, 15.0, 0.0), vec3(1.0, 1.0, 1.0)), r, rec) * throughput;
-            }
-           
-            //calculate secondary ray and update throughput
+            // Add emissive contribution (for light sources)
+            col += rec.material.emissive * throughput;
+            
+            // Calculate direct lighting with 3 white point lights
+            col += directlighting(createPointLight(vec3(-10.0, 15.0, 0.0), vec3(1.0, 1.0, 1.0)), r, rec) * throughput;
+            col += directlighting(createPointLight(vec3(8.0, 15.0, 3.0), vec3(1.0, 1.0, 1.0)), r, rec) * throughput;
+            col += directlighting(createPointLight(vec3(1.0, 15.0, -9.0), vec3(1.0, 1.0, 1.0)), r, rec) * throughput;
+            
+            // Calculate secondary ray and update throughput
             Ray scatterRay;
             vec3 atten;
             if(scatter(r, rec, atten, scatterRay))
-            {   //  insert your code here    }
-        
+            {
+                // Update throughput with material attenuation
+                throughput *= atten;
+                
+                // Continue with the scattered ray
+                r = scatterRay;
+                
+                // Russian Roulette for performance optimization (optional)
+                // Terminate rays that contribute very little to the final image
+                if(i > 3) // Start Russian Roulette after a few bounces
+                {
+                    float maxComponent = max(throughput.r, max(throughput.g, throughput.b));
+                    if(maxComponent < 0.1) // Threshold for termination
+                    {
+                        float continueProbability = maxComponent;
+                        if(hash1(gSeed) > continueProbability)
+                        {
+                            break; // Terminate ray
+                        }
+                        // Boost throughput to maintain energy conservation
+                        throughput /= continueProbability;
+                    }
+                }
+            }
+            else
+            {
+                // Material absorbed the ray (no scattering occurred)
+                break;
             }
         }
-        else  //background
+        else // Ray missed all objects - hit background/environment
         {
-            float t = 0.8 * (r.d.y + 1.0);
-            col += throughput * mix(vec3(1.0), vec3(0.5, 0.7, 1.0), t);
+            // Simple sky gradient background
+            float t = 0.5 * (r.d.y + 1.0); // Normalize y to [0,1]
+            vec3 skyColor = mix(vec3(1.0, 1.0, 1.0), vec3(0.5, 0.7, 1.0), t);
+            col += throughput * skyColor;
             break;
         }
     }
+    
     return col;
 }
 
