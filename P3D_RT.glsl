@@ -7,7 +7,7 @@
  #include "./common.glsl"
  #iChannel0 "self"
 
- #define SCENE 0
+ #define SCENE 1
 
 bool hit_world(Ray r, float tmin, float tmax, inout HitRecord rec)
 {
@@ -26,7 +26,7 @@ bool hit_world(Ray r, float tmin, float tmax, inout HitRecord rec)
         {
             hit = true;
             rec.material = createDiffuseMaterial(vec3(0.2, 0.95, 0.1));
-            //rec.material = createDiffuseMaterial(vec3(0.4, 0.2, 0.1));
+            rec.material = createDiffuseMaterial(vec3(0.4, 0.2, 0.1));
         }
 
         if(hit_sphere(createSphere(vec3(4.0, 1.0, 0.0), 1.0),r,tmin,rec.t,rec))
@@ -190,6 +190,13 @@ bool hit_world(Ray r, float tmin, float tmax, inout HitRecord rec)
         }
 
     #elif SCENE == 2
+        // Scene with just a sphere. 
+        // This is a simple test scene to verify basic ray-sphere intersection.
+        if(hit_sphere(createSphere(vec3(0.0, 0.0, -5.0), 1.0), r, tmin, rec.t, rec))
+        {
+            hit = true;
+            rec.material = createDiffuseMaterial(vec3(0.8, 0.2, 0.2));
+        }
     #elif SCENE == 3
     #endif
 
@@ -261,7 +268,7 @@ vec3 directlighting(pointLight pl, Ray r, HitRecord rec) {
 vec3 rayColor(Ray r)
 {
     HitRecord rec;
-    vec3 col = vec3(0.0);
+    vec3 col = vec3(0,0,0);
     vec3 throughput = vec3(1.0);
     
     for(int i = 0; i < MAX_BOUNCES; ++i)
@@ -275,52 +282,58 @@ vec3 rayColor(Ray r)
             col += directlighting(createPointLight(vec3(-10.0, 15.0, 0.0), vec3(1.0, 1.0, 1.0)), r, rec) * throughput;
             col += directlighting(createPointLight(vec3(8.0, 15.0, 3.0), vec3(1.0, 1.0, 1.0)), r, rec) * throughput;
             col += directlighting(createPointLight(vec3(1.0, 15.0, -9.0), vec3(1.0, 1.0, 1.0)), r, rec) * throughput;
-            
+            col = vec3(1,1,1);
+
             // Calculate secondary ray and update throughput
             Ray scatterRay;
             vec3 atten;
-            if(scatter(r, rec, atten, scatterRay))
-            {
-                // Update throughput with material attenuation
-                throughput *= atten;
+
+            // if(scatter(r, rec, atten, scatterRay))
+            // {
+            //     // Update throughput with material attenuation
+            //     throughput *= atten;
                 
-                // Continue with the scattered ray
-                r = scatterRay;
+            //     // Continue with the scattered ray
+            //     r = scatterRay;
                 
-                // Russian Roulette for performance optimization (optional)
-                // Terminate rays that contribute very little to the final image
-                if(i > 3) // Start Russian Roulette after a few bounces
-                {
-                    float maxComponent = max(throughput.r, max(throughput.g, throughput.b));
-                    if(maxComponent < 0.1) // Threshold for termination
-                    {
-                        float continueProbability = maxComponent;
-                        if(hash1(gSeed) > continueProbability)
-                        {
-                            break; // Terminate ray
-                        }
-                        // Boost throughput to maintain energy conservation
-                        throughput /= continueProbability;
-                    }
-                }
-            }
-            else
-            {
-                // Material absorbed the ray (no scattering occurred)
-                break;
-            }
+            //     // Russian Roulette for performance optimization (optional)
+            //     // Terminate rays that contribute very little to the final image
+            //     if(i > 3) // Start Russian Roulette after a few bounces
+            //     {
+            //         float maxComponent = max(throughput.r, max(throughput.g, throughput.b));
+            //         if(maxComponent < 0.1) // Threshold for termination
+            //         {
+            //             float continueProbability = maxComponent;
+            //             if(hash1(gSeed) > continueProbability)
+            //             {
+            //                 break; // Terminate ray
+            //             }
+            //             // Boost throughput to maintain energy conservation
+            //             throughput /= continueProbability;
+            //         }
+            //     }
+            // }
+            // else
+            // {
+            //     // Material absorbed the ray (no scattering occurred)
+            //     break;
+            // }
         }
         else // Ray missed all objects - hit background/environment
         {
             // Simple sky gradient background
+            
             float t = 0.5 * (r.d.y + 1.0); // Normalize y to [0,1]
             vec3 skyColor = mix(vec3(1.0, 1.0, 1.0), vec3(0.5, 0.7, 1.0), t);
-            col += throughput * skyColor;
+            col += throughput * skyColor;  
+            col = vec3(t-0.5,0,0);
+
             break;
         }
     }
     
     return col;
+    // return vec3(0.5 * (r.d + 1.0)); // Should show a colorful gradient
 }
 
 #define MAX_SAMPLES 10000.0
@@ -358,6 +371,7 @@ void main()
     vec2 ps = gl_FragCoord.xy + hash2(gSeed);
     //vec2 ps = gl_FragCoord.xy;
     vec3 color = rayColor(getRay(cam, ps));
+    // vec3 color = vec3(1,1,0);
 
     if(iMouseButton.x != 0.0 || iMouseButton.y != 0.0)
     {

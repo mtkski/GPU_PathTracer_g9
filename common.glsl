@@ -318,8 +318,9 @@ bool hit_triangle(Triangle t, Ray r, float tmin, float tmax, out HitRecord rec)
     vec3 Q = cross(T, edgeBA);
     
     float tHit = dot(edgeCA, Q) * invDet;
+    // float tHit = 0.2;
 
-    if(tHit < tmin || tHit > tmax) return false; //hit outside of range
+    if(tHit < tmin  ) return false; //hit outside of range
 
     float beta = dot(T, P) * invDet;
 
@@ -336,6 +337,7 @@ bool hit_triangle(Triangle t, Ray r, float tmin, float tmax, out HitRecord rec)
         rec.normal = normal;
         return true;
     }
+
     return false;  //hit outside of range
 }
 
